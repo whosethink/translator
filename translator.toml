@@ -1,0 +1,15 @@
+[baidu]
+key = "APP ID*****************"
+secret = "APP SECRET****************"
+
+[aliyun]
+key = "AccessKey ID***************"
+secret = "AccessKey Secret***************"
+
+[huoshan]
+key = "Access Key ID************"
+secret = "Secret Access Key***********************"
+
+[tencent]
+key = "SecretId**************"
+secret = "SecretKey***************"
