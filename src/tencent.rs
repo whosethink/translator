@@ -59,10 +59,7 @@ struct TencentInnerRes {
 
 }
 
-pub async fn trans(context: &Context) -> TransResult<Option<TransRes>> {
-  if !context.tencent_enabled() {
-    return Ok(None);
-  }
+pub async fn trans(context: &Context) -> TransResult<TransRes> {
   let req = context.req_ref();
   let client = context.client_ref();
   let current_time = Utc::now();
@@ -123,5 +120,5 @@ pub async fn trans(context: &Context) -> TransResult<Option<TransRes>> {
     .json::<TencentRes>()
     .await.map_err(|_| TransError::ResponseError)?
     .to_trans_res();
-  return Ok(Some(response));
+  return Ok(response);
 }

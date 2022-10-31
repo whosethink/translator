@@ -9,6 +9,7 @@ mod tencent;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use clap::Parser;
+use futures::FutureExt;
 use reqwest::Client;
 use reqwest::header::HeaderName;
 use tokio::io::AsyncWriteExt;
@@ -27,44 +28,50 @@ async fn main() {
 async fn inner_main(command: &TransCommand) -> TransResult<()> {
   let (tx, mut rx) = tokio::sync::mpsc::channel(4);
   let context = prepare_trans(&command).await?;
-  let _ = tokio::join!(
-    trans(" BaiDu ", tx.clone(), baidu::trans(&context)),
-    trans("HuoShan", tx.clone(), huoshan::trans(&context)),
-    trans(" AliYun", tx.clone(), aliyun::trans(&context)),
-    trans("Tencent", tx, tencent::trans(&context)),
-  );
+  let mut trans_tasks = Vec::with_capacity(4);
+  if context.baidu_enabled() {
+    trans_tasks.push(trans(" BaiDu ", tx.clone(), baidu::trans(&context)).boxed());
+  }
+  if context.huoshan_enabled() {
+    trans_tasks.push(trans("HuoShan", tx.clone(), huoshan::trans(&context)).boxed());
+  }
+  if context.aliyun_enabled() {
+    trans_tasks.push(trans(" AliYun", tx.clone(), aliyun::trans(&context)).boxed());
+  }
+  if context.tencent_enabled() {
+    trans_tasks.push(trans("Tencent", tx.clone(), tencent::trans(&context)).boxed());
+  }
+  { tx; }
+  futures::future::join_all(trans_tasks).await;
   while let Some((name, res)) = rx.recv().await {
     print_trans_res(name.as_str(), res).await;
   }
   Ok(())
 }
 
-async fn trans<F>(name: &str, sender: Sender<(String, TransResult<Option<TransRes>>)>, future: F) -> TransResult<()>
+async fn trans<F>(name: &str, sender: Sender<(String, TransResult<TransRes>)>, future: F) -> TransResult<()>
   where
-    F: Future<Output=TransResult<Option<TransRes>>>,
+    F: Future<Output=TransResult<TransRes>>,
 {
   let res = future.await;
   return sender.send((name.to_string(), res)).await.map_err(|_| TransError::ChannelError);
 }
 
-async fn print_trans_res(name: &str, res: TransResult<Option<TransRes>>) {
+async fn print_trans_res(name: &str, res: TransResult<TransRes>) {
   let mut writer = tokio::io::BufWriter::new(tokio::io::stdout());
   match res {
-    Ok(trans_res) => {
-      if let Some(answer) = trans_res {
-        let _ = writer.write_all(
-          format!("{}: {}\n", console::style(name).yellow(), console::style(answer.result()).white()).as_bytes()
-        ).await;
-        let _ = writer.flush().await;
-      }
+    Ok(answer) => {
+      let _ = writer.write_all(
+        format!("{}: {}\n", console::style(name).yellow(), console::style(answer.result()).white()).as_bytes()
+      ).await;
     }
     Err(error) => {
       let _ = writer.write_all(
         format!("{}: {:?}\n", console::style(name).yellow(), console::style(error).red()).as_bytes()
-        ).await;
-      let _ = writer.flush().await;
+      ).await;
     }
   }
+  let _ = writer.flush().await;
 }
 
 async fn prepare_trans(command: &TransCommand) -> TransResult<Context> {
@@ -133,5 +140,4 @@ impl TransCommand {
   fn config_path(&self) -> Option<PathBuf> {
     return self.config.clone();
   }
-
 }
