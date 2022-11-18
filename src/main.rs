@@ -28,7 +28,7 @@ async fn main() {
 async fn inner_main(command: &TransCommand) -> TransResult<()> {
   let (tx, mut rx) = tokio::sync::mpsc::channel(4);
   let context = prepare_trans(&command).await?;
-  let mut trans_tasks = Vec::with_capacity(4);
+  let mut trans_tasks = Vec::with_capacity(5);
   if context.baidu_enabled() {
     trans_tasks.push(trans(" BaiDu ", tx.clone(), baidu::trans(&context)).boxed());
   }
@@ -41,11 +41,15 @@ async fn inner_main(command: &TransCommand) -> TransResult<()> {
   if context.tencent_enabled() {
     trans_tasks.push(trans("Tencent", tx.clone(), tencent::trans(&context)).boxed());
   }
-  { tx; }
+  drop(tx);
+  let print_task = async {
+    while let Some((name, res)) = rx.recv().await {
+      print_trans_res(name.as_str(), res).await;
+    }
+    Ok(())
+  };
+  trans_tasks.push(print_task.boxed());
   futures::future::join_all(trans_tasks).await;
-  while let Some((name, res)) = rx.recv().await {
-    print_trans_res(name.as_str(), res).await;
-  }
   Ok(())
 }
 
